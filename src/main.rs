@@ -1,6 +1,7 @@
 
 use iced::{
-  button, Button, Alignment, Length, Settings, Point, Sandbox, Element, Column, Text, 
+  button, Alignment, Length, Settings, Point, Sandbox, Element, Column, Text, Row, Button, Container, TextInput, text_input
+//  pure::widget::TextInput
 };
 
 pub fn main() -> iced::Result {
@@ -14,13 +15,28 @@ pub fn main() -> iced::Result {
 struct MoreMass {
   datasets:     Vec<backend::Dataset>,
   button_state: button::State,
+  snd_btn_state: button::State,
+  trd_btn_state: button::State,
+  txt_inp_state: text_input::State,
+  file_path:    String,
+  
   canvas_state: spectrum::State,
+  popup:        Option<WhichPopup>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+  Popup( WhichPopup ),
+  ChangeFilePath( String ),
+  LoadFile,
+  Clear,
+  Noop
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Message {
-  Clear,
-  Noop
+pub enum WhichPopup {
+  Example,
+  LoadFile,
 }
 
 impl Sandbox for MoreMass {
@@ -29,32 +45,91 @@ impl Sandbox for MoreMass {
   fn new() -> Self {
     MoreMass::default()
   }
-    // backend::parser::parse_mzxml_badly("/home/sven/Documents/projects/mMass/data/20220516/Input_caColumn_1.mzXML".to_string())
-  
+
   fn title(&self) -> String {
     String::from("MoreMass")
   }
   
   fn update(&mut self, message: Message) {
     match message {
+      Message::Popup(which) => {
+        self.popup = Some(which);
+      }
+      Message::ChangeFilePath(s) => {
+        self.file_path = s;
+      }
+      Message::LoadFile => {
+        if let Some(d) = crate::backend::parser::parse_mzxml_badly(&self.file_path) {
+          self.datasets.push(d);
+        }
+        self.canvas_state._req_redraw();
+        self.file_path = "".to_string();
+      }
       Message::Clear => {
-        // TODO
+        self.popup = None;
       }
       Message::Noop => { }
     }
   }
   
   fn view(&mut self) -> Element<Message> {
-    Column::new()
-      .padding(20)
-      .spacing(20)
-      .align_items(Alignment::Center)
-      .push( Text::new(self.title()).width(Length::Shrink).size(50) )
-      .push(self.canvas_state.view(&self.datasets).map(|_| {Message::Noop}))
-      .push( 
-        Button::new(&mut self.button_state, Text::new("Clear"))
-          .padding(8)
-          .on_press(Message::Clear)
+    
+    Row::new().padding(20).spacing(10).align_items(Alignment::Center)
+      .push(
+        Column::new()
+          .width(Length::FillPortion(1))
+          .align_items(Alignment::Center)
+          .push(
+            Button::new(&mut self.trd_btn_state, Text::new("Load file"))
+              .on_press(Message::Popup(WhichPopup::LoadFile))
+          )
+          .push(
+            Button::new(&mut self.button_state,  Text::new("test"))
+              .on_press(Message::Popup(WhichPopup::Example))
+          )
+      )
+      .push(
+        Column::new()
+          .padding(20)
+          .spacing(20)
+          .width(Length::FillPortion(5))
+          .align_items(Alignment::Center)
+          .push( Text::new("MoreMass").width(Length::Shrink).size(50) )
+          .push(self.canvas_state.view(&self.datasets).map(|_| {Message::Noop}))
+      )
+      .push::<Element<Message>>(
+        if let Some(which) = self.popup {
+          match which {
+            WhichPopup::Example => {
+            
+              Column::new().align_items(Alignment::Center)
+                .push(Text::new("Example Popup opened"))
+                .push(Button::new(&mut self.snd_btn_state, Text::new("Clear")).on_press(Message::Clear))
+                .width(Length::FillPortion(1))
+                .into()
+                
+            }
+            
+            WhichPopup::LoadFile => {
+            
+              let input = TextInput::new(
+                &mut self.txt_inp_state,
+                "File Path",
+                &self.file_path,
+                |s| { Message::ChangeFilePath(s) },
+              ).on_submit(Message::LoadFile);
+              
+              Column::new().align_items(Alignment::Center)
+                .push(Text::new("Enter File Path:"))
+                .push::<Element<Message>>(input.into())
+                .width(Length::FillPortion(1))
+                .into()
+                
+            }
+          }
+        } else {
+          Text::new("No popup").width(Length::FillPortion(1)).into()
+        }
       )
       .into()
   }
@@ -155,6 +230,20 @@ mod spectrum {
   }
 }
 
+mod ui_elements {
+/*  use iced::{
+    Element, 
+    pure::{ button::Button }
+  };
+  use crate::Message;
+  
+  pub fn popup_button<'a>(text: &str, which: WhichPopup) -> Element<'a, Message> {
+    
+    Button::new(text).on_press(Message::Popup(kid)).into();
+
+  }*/
+}
+
 // --------------------------------------------------------
 mod backend {
   use iced::Point;
@@ -169,7 +258,7 @@ mod backend {
     pub x_max:  f32,
   }
 
-  mod parser {
+  pub mod parser {
     use crate::backend::Dataset;
     use std::fs::File;
     use std::path::Path;
@@ -184,9 +273,9 @@ mod backend {
     const PEAKS_HEAD: &str = "             contentType=\"m/z-int\">";
     const CONFIG: base64::Config = base64::Config::new(base64::CharacterSet::Standard, true);
 
-    pub fn parse_mzxml_badly( s: String ) -> Option<Dataset> {
+    pub fn parse_mzxml_badly( s: &String ) -> Option<Dataset> {
 
-      let path = Path::new(&s);
+      let path = Path::new(s);
       let display = path.display();
       
       // open file

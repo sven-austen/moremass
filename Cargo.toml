@@ -7,6 +7,6 @@ edition = "2021"
 
 [dependencies]
 #iced = "0.4"
-iced = { version = "0.4", features = ["canvas"] }
+iced = { version = "0.4", features = ["canvas", "pure"] }
 base64 = "0.13.0"
 byteorder = "1.4.3"
