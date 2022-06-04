@@ -1,6 +1,7 @@
 
 use iced::{
-  button, Alignment, Length, Settings, Point, Sandbox, Element, Column, Text, Row, Button, Container, TextInput, text_input
+  button, Length, Settings, Point, Sandbox, Element, Column, Text, Row, Button, Container, TextInput, text_input,
+  Alignment, alignment::Horizontal
 //  pure::widget::TextInput
 };
 
@@ -35,8 +36,7 @@ pub enum Message {
 
 #[derive(Debug, Clone, Copy)]
 pub enum WhichPopup {
-  Example,
-  LoadFile,
+  FindFile,
 }
 
 impl Sandbox for MoreMass {
@@ -62,30 +62,91 @@ impl Sandbox for MoreMass {
         if let Some(d) = crate::backend::parser::parse_mzxml_badly(&self.file_path) {
           self.datasets.push(d);
         }
-        self.canvas_state._req_redraw();
         self.file_path = "".to_string();
+        self.popup = None;
+        self.canvas_state._req_redraw();
       }
       Message::Clear => {
-        self.popup = None;
+        self.datasets = vec![];
+        self.canvas_state._req_redraw();
       }
       Message::Noop => { }
     }
   }
   
   fn view(&mut self) -> Element<Message> {
-    
-    Row::new().padding(20).spacing(10).align_items(Alignment::Center)
+  
+    let left = Column::new().padding(20).spacing(20)
+      .width(Length::FillPortion(1))
+      .align_items(Horizontal::Center.into())
       .push(
+        Button::new(&mut self.trd_btn_state, Text::new("Load file"))
+          .on_press(Message::Popup(WhichPopup::FindFile))
+      )
+      .push(
+        Button::new(&mut self.snd_btn_state, Text::new("Clear"))
+          .on_press(Message::Clear)
+      );
+    
+    let center = Column::new().push(
+      self.canvas_state.view(&self.datasets).map(|_| {Message::Noop})
+    ).width(Length::FillPortion(5));
+    
+    let right: Element<Message> = 
+      if let Some(which) = self.popup {
+        match which {
+        
+          WhichPopup::FindFile => {
+          
+            let input = TextInput::new(
+              &mut self.txt_inp_state,
+              "File Path",
+              &self.file_path,
+              |s| { Message::ChangeFilePath(s) },
+            ).on_submit(Message::LoadFile);
+            
+            Column::new().padding(20).spacing(20)
+              .align_items(Horizontal::Center.into())
+              .push(Text::new("Enter File Path:"))
+              .push::<Element<Message>>(input.into())
+              .width(Length::FillPortion(4))
+              .into()
+              
+          }
+        }
+      } else {
         Column::new()
           .width(Length::FillPortion(1))
           .align_items(Alignment::Center)
+          .push(Text::new("No popup"))
+          .into()
+      };
+
+
+    Column::new().padding(20).spacing(10).align_items(Alignment::Center)
+      .push( Text::new("MoreMass").width(Length::Shrink).size(50) )
+      .push(
+        Row::new()
+          .push(left)
+          .push(center)
+          .push(right)
+      )
+      .into()
+    /*
+    Row::new().padding(20).spacing(10)
+      .push(
+        Column::new()
+          .width(Length::FillPortion(1))
+          .align_items(Horizontal::Center.into())
+          .padding(20)
+          .spacing(20)
           .push(
             Button::new(&mut self.trd_btn_state, Text::new("Load file"))
-              .on_press(Message::Popup(WhichPopup::LoadFile))
+              .on_press(Message::Popup(WhichPopup::FindFile))
           )
           .push(
-            Button::new(&mut self.button_state,  Text::new("test"))
-              .on_press(Message::Popup(WhichPopup::Example))
+            Button::new(&mut self.snd_btn_state, Text::new("Clear"))
+              .on_press(Message::Clear)
           )
       )
       .push(
@@ -100,17 +161,8 @@ impl Sandbox for MoreMass {
       .push::<Element<Message>>(
         if let Some(which) = self.popup {
           match which {
-            WhichPopup::Example => {
-            
-              Column::new().align_items(Alignment::Center)
-                .push(Text::new("Example Popup opened"))
-                .push(Button::new(&mut self.snd_btn_state, Text::new("Clear")).on_press(Message::Clear))
-                .width(Length::FillPortion(1))
-                .into()
-                
-            }
-            
-            WhichPopup::LoadFile => {
+          
+            WhichPopup::FindFile => {
             
               let input = TextInput::new(
                 &mut self.txt_inp_state,
@@ -119,10 +171,12 @@ impl Sandbox for MoreMass {
                 |s| { Message::ChangeFilePath(s) },
               ).on_submit(Message::LoadFile);
               
-              Column::new().align_items(Alignment::Center)
+              Column::new().align_items(Horizontal::Center.into())
+                .padding(20)
+                .spacing(20)
                 .push(Text::new("Enter File Path:"))
                 .push::<Element<Message>>(input.into())
-                .width(Length::FillPortion(1))
+                .width(Length::FillPortion(4))
                 .into()
                 
             }
@@ -131,7 +185,7 @@ impl Sandbox for MoreMass {
           Text::new("No popup").width(Length::FillPortion(1)).into()
         }
       )
-      .into()
+      .into()*/
   }
 }
 
@@ -140,10 +194,16 @@ mod spectrum {
   use iced::{
     canvas::event::{self, Event},
     canvas::{self, Canvas, Cursor, Frame, Geometry, Path, Stroke},
-    /*mouse, */Element, Length, Point, Rectangle
+    /*mouse, */Element, Length, Point, Rectangle, Color,
   };
   
   use crate::backend::Dataset;
+  
+  const COLORS: [Color; 3] = [
+    Color { r: 0.169, g: 0.302, b: 0.455, a: 1.0 }, // blau
+    Color { r: 0.824, g: 0.329, b: 0.4  , a: 1.0 }, // rot
+    Color { r: 0.651, g: 0.255, b: 0.523, a: 1.0 }, // lila
+  ];
 
   #[derive(Default)]
   pub struct State {
@@ -203,26 +263,25 @@ mod spectrum {
       
       let content =
         self.state.cache.draw(bounds.size(), |frame: &mut Frame| {
-          let peaklists = self.datasets.iter().map(|ds| {
+          let peaklists: Vec<&Vec<Point>> = self.datasets.iter().map(|ds| {
             let Dataset { peaks, .. } = ds;
             peaks
-          });
+          }).collect();
           
-          let curve = Path::new(|p| {
-            for peaklist in peaklists {
-              
-              if peaklist.len() < 2 { continue; }
-              
+          for i in 0..peaklists.len() {
+            let peaklist = peaklists[i];
+            if peaklist.len() < 2 { continue; }
+            
+            let curve = Path::new(|p| {
               p.move_to(adj_point(peaklist[0]));
               for peak in &peaklist[1..] {
                 p.line_to(adj_point(*peak));
               }
-            }
-          });
-
-          frame.stroke(&curve, Stroke::default().with_width(0.5));
+            });
+            frame.stroke(&curve, Stroke::default().with_width(0.5).with_color(COLORS[i%3]));
+          }
           
-          frame.stroke(&Path::rectangle(Point::ORIGIN, frame.size()), Stroke::default());
+          frame.stroke(&Path::rectangle(Point::ORIGIN, frame.size()), Stroke::default().with_width(2.0));
         });
       
       vec![content]
