@@ -1,8 +1,7 @@
 
 use iced::{
-  button, Length, Settings, Point, Sandbox, Element, Column, Text, Row, Button, Container, TextInput, text_input,
-  Alignment, alignment::Horizontal
-//  pure::widget::TextInput
+  button, Length, Settings, Sandbox, Element, Column, Text, Row, Button, TextInput, text_input,
+  Alignment, alignment::Horizontal,
 };
 
 pub fn main() -> iced::Result {
@@ -15,14 +14,18 @@ pub fn main() -> iced::Result {
 #[derive(Default)]
 struct MoreMass {
   datasets:     Vec<backend::Dataset>,
-  button_state: button::State,
-  snd_btn_state: button::State,
-  trd_btn_state: button::State,
-  txt_inp_state: text_input::State,
+  controls:     Controls,
   file_path:    String,
   
   canvas_state: spectrum::State,
   popup:        Option<WhichPopup>,
+}
+
+#[derive(Default)]
+struct Controls {
+  btn_load:  button::State,
+  btn_clear: button::State,
+  txt_file:  text_input::State,
 }
 
 #[derive(Debug, Clone)]
@@ -80,12 +83,14 @@ impl Sandbox for MoreMass {
       .width(Length::FillPortion(1))
       .align_items(Horizontal::Center.into())
       .push(
-        Button::new(&mut self.trd_btn_state, Text::new("Load file"))
-          .on_press(Message::Popup(WhichPopup::FindFile))
+        Button::new(
+          &mut self.controls.btn_load, Text::new("Load file")
+        ).on_press(Message::Popup(WhichPopup::FindFile))
       )
       .push(
-        Button::new(&mut self.snd_btn_state, Text::new("Clear"))
-          .on_press(Message::Clear)
+        Button::new(
+          &mut self.controls.btn_clear, Text::new("Clear")
+        ).on_press(Message::Clear)
       );
     
     let center = Column::new().push(
@@ -99,7 +104,7 @@ impl Sandbox for MoreMass {
           WhichPopup::FindFile => {
           
             let input = TextInput::new(
-              &mut self.txt_inp_state,
+              &mut self.controls.txt_file,
               "File Path",
               &self.file_path,
               |s| { Message::ChangeFilePath(s) },
@@ -123,7 +128,8 @@ impl Sandbox for MoreMass {
       };
 
 
-    Column::new().padding(20).spacing(10).align_items(Alignment::Center)
+    Column::new().padding(20).spacing(10)
+      .align_items(Alignment::Center)
       .push( Text::new("MoreMass").width(Length::Shrink).size(50) )
       .push(
         Row::new()
@@ -132,60 +138,6 @@ impl Sandbox for MoreMass {
           .push(right)
       )
       .into()
-    /*
-    Row::new().padding(20).spacing(10)
-      .push(
-        Column::new()
-          .width(Length::FillPortion(1))
-          .align_items(Horizontal::Center.into())
-          .padding(20)
-          .spacing(20)
-          .push(
-            Button::new(&mut self.trd_btn_state, Text::new("Load file"))
-              .on_press(Message::Popup(WhichPopup::FindFile))
-          )
-          .push(
-            Button::new(&mut self.snd_btn_state, Text::new("Clear"))
-              .on_press(Message::Clear)
-          )
-      )
-      .push(
-        Column::new()
-          .padding(20)
-          .spacing(20)
-          .width(Length::FillPortion(5))
-          .align_items(Alignment::Center)
-          .push( Text::new("MoreMass").width(Length::Shrink).size(50) )
-          .push(self.canvas_state.view(&self.datasets).map(|_| {Message::Noop}))
-      )
-      .push::<Element<Message>>(
-        if let Some(which) = self.popup {
-          match which {
-          
-            WhichPopup::FindFile => {
-            
-              let input = TextInput::new(
-                &mut self.txt_inp_state,
-                "File Path",
-                &self.file_path,
-                |s| { Message::ChangeFilePath(s) },
-              ).on_submit(Message::LoadFile);
-              
-              Column::new().align_items(Horizontal::Center.into())
-                .padding(20)
-                .spacing(20)
-                .push(Text::new("Enter File Path:"))
-                .push::<Element<Message>>(input.into())
-                .width(Length::FillPortion(4))
-                .into()
-                
-            }
-          }
-        } else {
-          Text::new("No popup").width(Length::FillPortion(1)).into()
-        }
-      )
-      .into()*/
   }
 }
 
@@ -238,15 +190,15 @@ mod spectrum {
   impl<'a> canvas::Program<()> for Thing<'a> {
     fn update(
       &mut self,
-      event: Event,
-      bounds: Rectangle,
-      cursor: Cursor
+      _event: Event,
+      _bounds: Rectangle,
+      _cursor: Cursor
     ) -> (event::Status, Option<()>) {
-      
+
       (event::Status::Ignored, None) // make this functional
     }
     
-    fn draw(&self, bounds: Rectangle, cursor: Cursor) -> Vec<Geometry> {
+    fn draw(&self, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
       let global_max_y = self.datasets.iter()
         .fold(1f32, |acc, ds| {
           let &Dataset { y_max, .. } = &ds;
