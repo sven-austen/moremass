@@ -29,6 +29,7 @@ struct MoreMass {
 struct Controls {
   btn_load:  button::State,
   btn_clear: button::State,
+  
   txt_file:  text_input::State,
 }
 
@@ -71,6 +72,7 @@ impl Sandbox for MoreMass {
         self.data.push(crate::backend::parser::parse_mzxml_badly(&self.file_path));
         self.file_path = "".to_string();
         self.popup = None;
+        self.canvas_state.x0 = self.data.x_min_g as f32;
         self.canvas_state.req_redraw();
       }
       Message::Clear => {
