@@ -4,13 +4,20 @@
  */
 
 use iced::{
-  canvas::event::{self, Event},
-  canvas::{self, Canvas, Cursor, Frame, Geometry, Path, Stroke},
-  mouse, Element, Length, Point, Rectangle, Color, Size,
-  Column, Alignment
+
+  pure::{
+    widget::canvas::event::{self, Event},
+    widget::canvas::{self, Canvas, Cursor, Frame, Geometry, Path, Stroke},
+    
+    column, Element,
+  },
+  
+  mouse, Length, Point, Rectangle, Color, Size, Vector,
+  Alignment
 };
 
 use crate::backend::{ Data, Dataset };
+use crate::{ Message };
 
 const COLORS: [Color; 3] = [
   Color { r: 0.169, g: 0.302, b: 0.455, a: 1.0 }, // blue
@@ -20,7 +27,7 @@ const COLORS: [Color; 3] = [
 
 const RULER_GIRTH: f32 = 10.0;
 const PAD:         f32 = 20.0;
-const SCALE_X:     f32 =  5.0;//0.3;
+const SCALE_X:     f32 =  5.0;
 
 #[derive(Default)]
 pub struct State {
@@ -32,21 +39,29 @@ pub struct State {
   pub r_click: Option<Point>,
 }
 
+#[derive(Debug, Clone)]
+pub enum CanvasMsg {
+  LClick(Point),
+  RClick(Point),
+  MouseUp,
+  MoveTo(f32, f32, f32, f32),
+  Noop,
+}
+
 impl State {
   pub fn view<'a>(
-    &'a mut self,
+    &'a self,
     data: &'a Data
-  ) -> Element<'a, ()> {
+  ) -> Element<'a, CanvasMsg> {
 
-    Column::new().spacing(10).align_items(Alignment::Center)
-      .push::<Element<'a, ()>>(
+    column().spacing(10).align_items(Alignment::Center)
+      .push(
         Canvas::new(Spectrum {
           state: self,
           data,
         })
         .height(Length::Fill)
         .width( Length::Units(f64::max(0.0, data.x_max_g - data.x_min_g) as u16) )
-        .into()
       )
       .into()
   }
@@ -57,17 +72,20 @@ impl State {
 }
 
 pub struct Spectrum<'a> {
-  state: &'a mut State,
+  state: &'a State,
   data: &'a Data
 }
 
-impl<'a> canvas::Program<()> for Spectrum<'a> {
+impl<'a> canvas::Program<CanvasMsg> for Spectrum<'a> {
+  type State = State;
+
   fn update(
-    &mut self,
+    &self,
+    state: &mut State,
     event: Event,
     bounds: Rectangle,
     cursor: Cursor
-  ) -> (event::Status, Option<()>) {
+  ) -> (event::Status, Option<CanvasMsg>) {
 
     let cursor_position =
       if let Some(position) = cursor.position_in(&bounds) {
@@ -80,48 +98,47 @@ impl<'a> canvas::Program<()> for Spectrum<'a> {
       Event::Mouse(mouse_event) => {
         let message = match mouse_event {
           mouse::Event::ButtonPressed(mouse::Button::Left) => {
-            self.state.l_click = Some(cursor_position);
-            None
+            CanvasMsg::LClick(cursor_position)
           }
           
-          mouse::Event::CursorMoved {..} => {
-            if let Some(lcl) = self.state.l_click {
-              self.state.x0 = self.state.x0 + (lcl.x - cursor_position.x) / SCALE_X;
-              self.state.l_click = Some(cursor_position);
-              self.state.req_redraw();
-            }
-            
-            None
+          mouse::Event::CursorMoved {position: Point {x: x1, y: y1}} => {
+            CanvasMsg::MoveTo(x1, y1, SCALE_X, 1.0)
           }
           
           mouse::Event::ButtonReleased(mouse::Button::Left) => {
-            self.state.l_click = None;
-            
-            None
+            CanvasMsg::MouseUp
           }
           
-          _ => None
+          _ => CanvasMsg::Noop
         };
         
-        (event::Status::Captured, message)
+        (event::Status::Captured, Some(message))
       }
       _ => (event::Status::Ignored, None)
     }
   }
   
-  fn draw(&self, bounds: Rectangle, _cursor: Cursor) -> Vec<Geometry> {
+  fn draw(
+    &self, 
+    state: &State, 
+    bounds: Rectangle, 
+    _cursor: Cursor
+  ) -> Vec<Geometry> {
   
     let scale_y = (bounds.height - RULER_GIRTH - 2.0*PAD) / self.data.y_max_g as f32;
     
     let adj_point = |(x, y)| {
       Point {
-        x: (x - self.state.x0 as f64) as f32 *SCALE_X + RULER_GIRTH + PAD,
-        y: (self.data.y_max_g - y + self.state.y0 as f64) as f32 *scale_y + PAD
+        x: (x /*- state.x0*/ as f64) as f32 *SCALE_X + PAD + RULER_GIRTH,
+        y: (self.data.y_max_g - y as f64) as f32 *scale_y + PAD
       }
     };
     
     vec![
       self.state.cache.draw(bounds.size(), |frame: &mut Frame| {
+      
+        // 
+        frame.stroke(&Path::rectangle(Point::ORIGIN, frame.size()), Stroke::default().with_width(2.0));
       
         // RULERS ------------------------------------
 
@@ -140,6 +157,8 @@ impl<'a> canvas::Program<()> for Spectrum<'a> {
         );
       
         // PEAKS -------------------------------------
+        frame.translate(Vector { x: -self.state.x0*SCALE_X, y: 0.0 });
+        
         let peaklists: Vec<&Vec<(f64, f64)>> = self.data.sets.iter().map(|ds| {
           let Dataset { peaks, .. } = ds; peaks
         }).collect();
@@ -157,7 +176,7 @@ impl<'a> canvas::Program<()> for Spectrum<'a> {
           frame.stroke(&curve, Stroke::default().with_width(0.5).with_color(COLORS[i%3]));
         }
         
-        frame.stroke(&Path::rectangle(Point::ORIGIN, frame.size()), Stroke::default().with_width(2.0));
+        
       
       })
     ]

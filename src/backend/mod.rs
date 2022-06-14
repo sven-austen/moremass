@@ -10,6 +10,17 @@ pub struct Dataset {
   pub x_max:  f64,
 }
 
+impl Default for Dataset {
+  fn default() -> Self { Dataset {
+    author: "Anon".to_string(), // TODO this
+    peaks:  vec![],
+    y_min:  f64::MAX,
+    y_max:  0.0,
+    x_min:  f64::MAX,
+    x_max:  0.0,
+  }}
+}
+
 pub struct Data {
   pub sets: Vec<Dataset>,
   pub x_min_g: f64,
