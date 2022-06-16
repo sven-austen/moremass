@@ -173,9 +173,7 @@ impl Sandbox for MoreMass {
     
     let center = column().push(
       self.plot.view(&self.data)
-//      self.plot.view(&self.data).map(Message::ForPlot)
-    )
-    .width(Length::FillPortion(6));
+    ).width(Length::FillPortion(5));
     
     
     let right: Element<Message> = 
