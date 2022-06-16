@@ -1,3 +1,3 @@
 
-pub mod spectrum_view;
 pub mod elements;
+pub mod plot;

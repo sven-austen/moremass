@@ -7,8 +7,13 @@ use base64::decode_config;
 
 //  use byteorder::{BigEndian, ReadBytesExt};
 
-//  const CNT_HEAD:   &str = "          peaksCount=\"";
-const PEAKS_HEAD: &str = "             contentType=\"m/z-int\">";
+/*const OPERATOR_HEAD:    &str = "";
+const CONTACT_HEAD:     &str = "";
+const INSTITUTION_HEAD: &str = "";
+const INSTRUMENT_HEAD:  &str = "";
+const DATE_HEAD:        &str = "";
+const PATH_HEAD:        &str = "    <parentFile fileName=\"";*/
+const POINTS_HEAD:       &str = "             contentType=\"m/z-int\">";
 const CONFIG: base64::Config = base64::Config::new(base64::CharacterSet::Standard, true);
 
 pub fn parse_mzxml_badly( s: &String ) -> Option<Dataset> {
@@ -37,10 +42,10 @@ pub fn parse_mzxml_badly( s: &String ) -> Option<Dataset> {
     };
     
     // read peak list
-    if line.len() >= PEAKS_HEAD.len() && 
-       line[..PEAKS_HEAD.len()] == *PEAKS_HEAD {
+    if line.len() >= POINTS_HEAD.len() && 
+       line[..POINTS_HEAD.len()] == *POINTS_HEAD {
         
-      let bytes = match decode_config(&line[PEAKS_HEAD.len() .. line.len()-8], CONFIG) {
+      let bytes = match decode_config(&line[POINTS_HEAD.len() .. line.len()-8], CONFIG) {
         Err(why) => {
           println!("Could not decode peak list: {:?}", why);
           return None;
@@ -48,7 +53,7 @@ pub fn parse_mzxml_badly( s: &String ) -> Option<Dataset> {
         Ok(bs) => bs
       };
       
-      let mut peaks: Vec<(f64, f64)> = Vec::with_capacity(bytes.len() / 16);
+      let mut points: Vec<(f64, f64)> = Vec::with_capacity(bytes.len() / 16);
       let mut buf:   [u8; 8]    = [0u8; 8];
       let mut cursor            = Cursor::new(&bytes);
       let mut x: f64;
@@ -83,16 +88,17 @@ pub fn parse_mzxml_badly( s: &String ) -> Option<Dataset> {
             return None
           }
         }
-        peaks.push((x, y));
+        points.push((x, y));
       }
 
       return Some(Dataset {
-        author: "MariuuuUUUUus".to_string(),
-        y_min:  peaks.iter().map(|&(_, y)| {y}).fold(0.0f64,   |acc, v| if acc < v {acc} else {v}),
-        y_max:  peaks.iter().map(|&(_, y)| {y}).fold(0.0f64,   |acc, v| if acc > v {acc} else {v}),
-        x_min:  peaks.iter().map(|&(x, _)| {x}).fold(f64::MAX, |acc, v| if acc < v {acc} else {v}),
-        x_max:  peaks.iter().map(|&(x, _)| {x}).fold(f64::MAX, |acc, v| if acc > v {acc} else {v}),
-        peaks:  peaks,
+        y_min:  points.iter().map(|&(_, y)| {y}).fold(0.0f64,   |acc, v| if acc < v {acc} else {v}),
+        y_max:  points.iter().map(|&(_, y)| {y}).fold(0.0f64,   |acc, v| if acc > v {acc} else {v}),
+        x_min:  points.iter().map(|&(x, _)| {x}).fold(f64::MAX, |acc, v| if acc < v {acc} else {v}),
+        x_max:  points.iter().map(|&(x, _)| {x}).fold(f64::MAX, |acc, v| if acc > v {acc} else {v}),
+        points: points,
+        title: "Test Title".to_string(),
+        ..Dataset::default()
       });
     }
   }

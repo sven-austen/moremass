@@ -6,12 +6,17 @@ use crate::backend::{
   parser::parse_mzxml_badly
 };
 
-use crate::frontend::spectrum_view;
+use crate::frontend::plot;
+//use crate::frontend::plot;
+use crate::frontend::elements::*;
+use crate::frontend::elements::header::*;
 
 use iced::{
-  Settings, Length, Point, Rectangle,
+  Settings, Length,
   Alignment, alignment::Horizontal,
-  pure::{ self, button, pick_list, row, scrollable, text, Sandbox, Element, column, text_input }
+  pure::{ 
+    row, text, Sandbox, Element, column, text_input,
+  },
 };
 
 
@@ -27,22 +32,14 @@ pub fn main() -> iced::Result {
 struct MoreMass {
   data:         backend::Data,
   controls:     Controls,
-  file_path:    String,
   
-  canvas_view:  Rectangle,
-  
-  canvas_state: spectrum_view::State,
-  popup:        Option<WhichPopup>,
+  plot: plot::State,
+  popup: Option<WhichPopup>,
 }
 
 #[derive(Default)]
 struct Controls {
-//  btn_load:  button::State,
-//  btn_clear: button::State,
-  
-//  scr_datasets: scrollable::State,
-  
-//  txt_file:  text_input::State,
+  file_path: String,
 }
 
 // Message Types ----------------------
@@ -50,9 +47,16 @@ struct Controls {
 pub enum Message {
   Popup( WhichPopup ),
   ChangeFilePath( String ),
+  ToggleVisibility( usize ),
+  SelectDataset( usize ),
+  
   FileOp( WhichFileOp ),
-  CanvasMessage( spectrum_view::CanvasMsg ),
+  ProcessingOp( WhichProcessingOp ),
+  
+  ForPlot( plot::PlotMsg ),
+  AddPeak( (f64, f64) ),
   LoadFile,
+  LoadFromPath( String ),
   Clear,
   Noop
 }
@@ -76,82 +80,88 @@ impl Sandbox for MoreMass {
   
   fn update(&mut self, message: Message) {
     match message {
+    
       Message::Popup(which) => {
         self.popup = Some(which);
       }
       Message::ChangeFilePath(s) => {
-        self.file_path = s;
+        self.controls.file_path = s;
       }
       Message::LoadFile => {
-        self.data.push(parse_mzxml_badly(&self.file_path));
-        self.file_path = "".to_string();
+        self.data.push(parse_mzxml_badly(&self.controls.file_path));
+        self.controls.file_path = "".to_string();
         self.popup = None;
-        self.canvas_state.x0 = self.data.x_min_g as f32;
-        self.canvas_state.req_redraw();
-//        self.reset_canvas_view();
+        self.plot.rethink_bounds(&self.data);
+        self.plot.req_redraw();
       }
+      
+      Message::LoadFromPath(s) => {
+        self.data.push(parse_mzxml_badly(&s));
+        self.controls.file_path = "".to_string();
+        self.popup = None;
+        self.plot.rethink_bounds(&self.data);
+        self.plot.req_redraw();
+      }
+      
+      Message::ToggleVisibility(index) => {
+        self.data.sets[index].visible = !self.data.sets[index].visible;
+        self.plot.req_redraw();
+      }
+      
+      Message::SelectDataset(index) => {
+        if index < self.data.sets.len() {
+          self.data.curr_ds = index;
+          if !self.data.sets[index].visible {
+            self.data.sets[index].visible = true;
+            self.plot.req_redraw();
+          }
+        }
+      }
+      
       Message::FileOp(which) => {
       
         match which {
           WhichFileOp::New => {
             self.data.push(Some(Dataset::default()));
-  //          self.reset_canvas_view();
           }
           WhichFileOp::Open => {
             self.popup = Some(WhichPopup::FindFile);
-    //        self.reset_canvas_view();
           }
           WhichFileOp::CloseAll => {
             self.data = crate::backend::Data::default();
-            self.canvas_state.req_redraw();
-      //      self.reset_canvas_view();
+            self.plot.req_redraw();
           }
         }
         
       }
       
-      Message::CanvasMessage(msg) => {
-        match msg {
-          spectrum_view::CanvasMsg::LClick(pt) => {
-            self.canvas_state.l_click = Some(pt);
-          }
-          
-          spectrum_view::CanvasMsg::RClick(pt) => {
-            self.canvas_state.r_click = Some(pt);
-          }
-          
-          spectrum_view::CanvasMsg::MouseUp => {
-            self.canvas_state.l_click = None;
-            self.canvas_state.r_click = None;
-          }
-          
-          spectrum_view::CanvasMsg::MoveTo(x1, y1, sx, sy) => {
-            
-            if let Some(Point {x, y}) = self.canvas_state.l_click {
-              self.canvas_state.x0 += (x - x1) / sx;
-            
-              self.canvas_state.l_click = Some(
-                Point { x: x1, y: y1 }
-              );
+      Message::ProcessingOp(which) => {
+      
+        match which {
+          WhichProcessingOp::FindPeaks => {
+            if self.data.curr_ds < self.data.sets.len() {
+              self.data.sets[self.data.curr_ds].find_peaks(); // TODO implement popup for entering parameters
+              self.plot.req_redraw();
             }
-            
-            if let Some(Point {x, y}) = self.canvas_state.r_click {
-              
-              self.canvas_state.r_click = Some(
-                Point { x: x1, y: y1 }
-              );
-            }
-            
-            self.canvas_state.req_redraw();
           }
-          
-          spectrum_view::CanvasMsg::Noop => { }
         }
+      
+      }
+      
+      Message::ForPlot(msg) => {
+        self.plot.update(msg);
+      }
+      
+      Message::AddPeak(pk) => {
+        // assumes that curr_ds is valid bc that was checked for in Plot
+        self.data.sets[self.data.curr_ds].peaks.push(pk);
+        self.plot.r_click = None;
+        self.plot.req_redraw();
       }
       
       Message::Clear => {
         self.data = crate::backend::Data::default();
-        self.canvas_state.req_redraw();
+        self.plot.req_redraw();
 //        self.reset_canvas_view();
       }
       Message::Noop => { }
@@ -162,10 +172,10 @@ impl Sandbox for MoreMass {
 
     
     let center = column().push(
-      self.canvas_state.view(&self.data).map(Message::CanvasMessage)
+      self.plot.view(&self.data)
+//      self.plot.view(&self.data).map(Message::ForPlot)
     )
-//    .push(text())
-    .width(Length::FillPortion(5));
+    .width(Length::FillPortion(6));
     
     
     let right: Element<Message> = 
@@ -180,8 +190,8 @@ impl Sandbox for MoreMass {
               .push(
                 text_input(
                   "File Path",
-                  &self.file_path,
-                  |s| { Message::ChangeFilePath(s) },
+                  &self.controls.file_path,
+                  Message::ChangeFilePath,
                 ).on_submit(Message::LoadFile)
               )
               .width(Length::FillPortion(4))
@@ -203,97 +213,16 @@ impl Sandbox for MoreMass {
         .push(ribbon())
         .push(
           row()
-            .push(loaded_datasets())
+            .push( 
+              row().push(view_datasets(&self.data.sets, self.data.curr_ds))
+                .width(Length::FillPortion(2))
+            )
+//            .push(peaks)
             .push(center)
             .push(right)
         )
         .into()
 
-/*    Column::new().padding(20).spacing(10)
-      .align_items(Alignment::Center)
-      .push( Text::new("MoreMass").width(Length::Shrink).size(50) )
-      .push(
-        Row::new()
-          .push(left)
-          .push(center)
-          .push(right)
-      )
-      .into()*/
   }
-}
-/*
-impl MoreMass {
-
-  reset_canvas_view(&mut self) {
-    
-    self.canvas_view.x      = self.data.x_min_g.min(self.data.x_max_g);
-    self.canvas_view.y      = 0.0;
-    self.canvas_view.width  = 5.0; // *  pt.x
-    self.canvas_view.height = 1.0; // * (y_max_g - pt.y)
-    
-  }
-
-}*/
-
-fn header() -> pure::Element<'static, Message> {
-
-  row().padding(0).spacing(5)
-    .width(Length::Fill).height(Length::Units(20))
-    .push(
-      pick_list(
-        &WhichFileOp::ALL[..],
-        None,
-        Message::FileOp
-      ).placeholder("File")
-    )
-    .into()
-}
-
-fn ribbon() -> pure::Element<'static, Message> {
-  row().padding(10).spacing(10)
-    .width(Length::Fill).height(Length::Units(40))
-    .push(
-      text("I am a ribbon :)")
-    )
-    .into()
-}
-
-fn loaded_datasets() -> pure::Element<'static, Message> {
-  let s = scrollable(text("i am scrollable"));
-  
-  /*for ds in &self.data.sets {
-    s.push(Text::new(ds.author.clone()));
-  }*/
-  s.into()
-}
-
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum WhichFileOp {
-  New,
-  Open,
-  CloseAll,
-}
-
-impl WhichFileOp {
-  const ALL: [WhichFileOp; 3] = [
-    WhichFileOp::New,
-    WhichFileOp::Open,
-    WhichFileOp::CloseAll,
-  ];
-}
-
-impl std::fmt::Display for WhichFileOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                WhichFileOp::New => "New",
-                WhichFileOp::Open => "Open",
-                WhichFileOp::CloseAll => "Close All",
-            }
-        )
-    }
 }
 
