@@ -1,9 +1,12 @@
 
-use crate::backend::Dataset;
+use crate::backend::{ Dataset, Metadata, MSPoint };
+
 use std::fs::File;
 use std::path::Path;
 use std::io::{self, BufRead, Cursor, Read};
+
 use base64::decode_config;
+use chrono::{ TimeZone, Utc };
 
 //  use byteorder::{BigEndian, ReadBytesExt};
 
@@ -53,7 +56,7 @@ pub fn parse_mzxml_badly( s: &String ) -> Option<Dataset> {
         Ok(bs) => bs
       };
       
-      let mut points: Vec<(f64, f64)> = Vec::with_capacity(bytes.len() / 16);
+      let mut points: Vec<MSPoint> = Vec::with_capacity(bytes.len() / 16);
       let mut buf:   [u8; 8]    = [0u8; 8];
       let mut cursor            = Cursor::new(&bytes);
       let mut x: f64;
@@ -88,18 +91,22 @@ pub fn parse_mzxml_badly( s: &String ) -> Option<Dataset> {
             return None
           }
         }
-        points.push((x, y));
+        points.push(MSPoint {mz: x, int: y, snr: 0.0});
       }
-
-      return Some(Dataset {
-        y_min:  points.iter().map(|&(_, y)| {y}).fold(0.0f64,   |acc, v| if acc < v {acc} else {v}),
-        y_max:  points.iter().map(|&(_, y)| {y}).fold(0.0f64,   |acc, v| if acc > v {acc} else {v}),
-        x_min:  points.iter().map(|&(x, _)| {x}).fold(f64::MAX, |acc, v| if acc < v {acc} else {v}),
-        x_max:  points.iter().map(|&(x, _)| {x}).fold(f64::MAX, |acc, v| if acc > v {acc} else {v}),
-        points: points,
-        title: "Test Title".to_string(),
-        ..Dataset::default()
-      });
+      
+      
+      return Some(Dataset::neww(
+        Metadata {
+          title:       "Test Title".to_string(),
+          operator:    "".to_string(),
+          contact:     "".to_string(),
+          institution: "".to_string(),
+          instrument:  "".to_string(),
+          date:        Utc.ymd(1970, 1, 1).and_hms(0, 0, 0),
+          path:        "".to_string(),
+        },
+        points
+      ));
     }
   }
   

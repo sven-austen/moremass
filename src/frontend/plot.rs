@@ -17,7 +17,7 @@ use iced::{
 };
 
 use crate::Message;
-use crate::backend::{ Data };
+use crate::backend::{ Data, MSPoint };
 
 const COLORS: [Color; 3] = [
   Color { r: 0.169, g: 0.302, b: 0.455, a: 1.0 }, // blue
@@ -162,7 +162,7 @@ impl State {
     if data.sets.len() == 1 {
       self.sx = 20.0;
       self.sy = 0.9;
-      self.x0 = self.sx * data.x_min_g as f32;
+      self.x0 = self.sx * data.mz_min as f32;
       self.y0 = 0.0;
     }
   }
@@ -374,15 +374,15 @@ impl<'a> canvas::Program<Message> for Plot<'a> {
           // draw points 
           let curve = Path::new(|p| {
             let mut j = 0;
-            while j < points.len()-1 && fst(points[j]) < lower {
+            while j < points.len()-1 && points[j].mz < lower {
               j += 1;
             }
             
-            p.move_to(self.to_coords(points[j], &bounds));
+            p.move_to(self.to_coords(&points[j], &bounds));
             j += 1;
             
-            while j < points.len() && fst(points[j]) < upper {
-              p.line_to(self.to_coords(points[j], &bounds));
+            while j < points.len() && points[j].mz < upper {
+              p.line_to(self.to_coords(&points[j], &bounds));
               j += 1;
             }
           });
@@ -390,9 +390,11 @@ impl<'a> canvas::Program<Message> for Plot<'a> {
           i += 1;
           
           // draw peaks
-          for (xpk, ypk) in peaks {
+          for k in peaks {
+//          for k in &ds.maxima {
+            let MSPoint {int: ypk, ..} = points[*k];
             
-            let Point {x: x_, y: y_} = self.to_coords((*xpk, *ypk), &bounds);
+            let Point {x: x_, y: y_} = self.to_coords(&points[*k], &bounds);
             
             let path = Path::new(|p| {
               p.move_to(Point {x: x_, y: bounds.height - RULER_GIRTH - self.state.y0});
@@ -405,7 +407,7 @@ impl<'a> canvas::Program<Message> for Plot<'a> {
                 .with_color(Color {r: 1.0, g: 0.0, b: 0.0, a: 1.0}));
             
             let txt = Text {
-              content: format!("{:.1}", *ypk),
+              content: format!("{:.1}", ypk),
               position: Point {x: x_, y: y_ - 10.0},
               ..Text::default()
             };
@@ -419,32 +421,40 @@ impl<'a> canvas::Program<Message> for Plot<'a> {
 }
 
 impl Plot<'_> {
-  fn max_pt_in_highlight(&self, bounds: &Rectangle) -> Option<(f64, f64)> {
+  fn max_pt_in_highlight(&self, bounds: &Rectangle) -> Option<usize> {
     
     if self.data.sets.len() > self.data.curr_ds {
       
       let (lower_c, upper_c) = self.state.selection;
-      let (lower,   upper  ) = 
-        ( fst(self.to_values(Point {x: lower_c, y: 0.0 }, &bounds))
-        , fst(self.to_values(Point {x: upper_c, y: 0.0 }, &bounds)));
-      let valid_pts: Vec<&(f64, f64)> = 
-        self.data.sets[self.data.curr_ds].points.iter()
-          .filter( |(x, _)| {x > &lower && x < &upper} )
+      let (mut lower, mut upper  ) = 
+        ( self.to_values(Point {x: lower_c, y: 0.0 }, &bounds).mz
+        , self.to_values(Point {x: upper_c, y: 0.0 }, &bounds).mz );
+      if lower > upper {
+        (lower, upper) = (upper, lower);
+      }
+      let valid_pts: Vec<&usize> = 
+        self.data.sets[self.data.curr_ds].maxima.iter()
+          .filter( |i| {
+            let MSPoint {mz, ..} = self.data.sets[self.data.curr_ds].points[**i];
+            mz > lower && mz < upper
+          } )
           .collect();
       
       if valid_pts.len() == 0 {
         return None;
       }
       
-      Some(valid_pts[1..].iter()
-        .fold(*valid_pts[0], |(acc_x, acc_y), (x, y)| {
-          if y > &acc_y {
-            (*x, *y)
+      let (index, _) = valid_pts[1..].iter()
+        .fold((0usize, &self.data.sets[self.data.curr_ds].points[*valid_pts[0]]), |(j, pt), i| {
+          let newpt = &self.data.sets[self.data.curr_ds].points[**i];
+          if pt.int > newpt.int {
+            (j, pt)
           } else {
-            (acc_x, acc_y)
+            (**i, newpt)
           }
-        })
-      )
+        });
+        
+      Some(index)
       
     } else {
       None
@@ -452,32 +462,32 @@ impl Plot<'_> {
     
   }
 
-  fn to_values(&self, Point {x, y}: Point, bounds: &Rectangle) -> (f64, f64) {
+  fn to_values(&self, Point {x, y}: Point, bounds: &Rectangle) -> MSPoint {
   
     
     let fac =
-      (bounds.height - RULER_GIRTH) / self.data.y_max_g as f32;
+      (bounds.height - RULER_GIRTH) / self.data.int_max as f32;
     
-    (
-       ((x + self.state.x0) / self.state.sx) as f64,
-      (((y + self.state.y0) / fac + self.data.y_max_g as f32) / self.state.sy) as f64
-    )
+    MSPoint {
+      mz:   ((x + self.state.x0) / self.state.sx) as f64,
+      int: (((y + self.state.y0) / fac + self.data.int_max as f32) / self.state.sy) as f64,
+      snr: 0.0
+    }
     
   }
 
-  fn to_coords(&self, (x, y): (f64, f64), bounds: &Rectangle) -> Point {
+  fn to_coords(&self, pt: &MSPoint, bounds: &Rectangle) -> Point {
+    
+    let MSPoint {mz: x, int: y, ..} = pt;
     
     let fac =
-      (bounds.height - RULER_GIRTH) / self.data.y_max_g as f32;
+      (bounds.height - RULER_GIRTH) / self.data.int_max as f32;
 
     Point {
-      x: x as f32 * self.state.sx - self.state.x0,
-      y: (self.data.y_max_g as f32 - y as f32 * self.state.sy) * fac - self.state.y0
+      x: *x as f32 * self.state.sx - self.state.x0,
+      y: (self.data.int_max as f32 - *y as f32 * self.state.sy) * fac - self.state.y0
     }
     
   }
 }
 
-fn fst((val, _): (f64, f64)) -> f64 {
-  val
-}

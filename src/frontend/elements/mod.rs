@@ -3,10 +3,12 @@
  */
 
 pub mod header;
+pub mod popups;
 
 use crate::{
   Message,
-  backend::{ Dataset },
+  backend::{ Dataset, MSPoint },
+  frontend::get_icon,
 };
 
 use iced::{
@@ -14,7 +16,7 @@ use iced::{
     Element, column, row, button, scrollable, text, container,
     widget::{ Row }
   },
-  Length, Svg, alignment, Alignment, Color
+  Length, alignment, Alignment, Color
 };
 
 pub fn view_datasets<'a>(
@@ -49,7 +51,7 @@ pub fn view_datasets<'a>(
               .width(Length::Units(20))
             )
             .push(
-              text(ds.title.clone())
+              text(ds.metadata.title.clone())
                 .size(14u16)
                 .width(Length::Fill)
             )
@@ -65,27 +67,27 @@ pub fn view_datasets<'a>(
                 row().padding(2).spacing(2).push(
                   text("Title: ").size(12u16).width(Length::FillPortion(1))
                 ).push(
-                  text(format!("{}", ds.title)).size(12u16).width(Length::FillPortion(1))
+                  text(format!("{}", ds.metadata.title)).size(12u16).width(Length::FillPortion(1))
                 )).push(row().padding(2).spacing(2).push(
                   text("Operator: ").size(12u16).width(Length::FillPortion(1))
                 ).push(
-                  text(format!("{}", ds.operator)).size(12u16).width(Length::FillPortion(1))
+                  text(format!("{}", ds.metadata.operator)).size(12u16).width(Length::FillPortion(1))
                 )).push(row().padding(2).spacing(2).push(
                   text("Contact: ").size(12u16).width(Length::FillPortion(1))
                 ).push(
-                  text(format!("{}", ds.contact)).size(12u16).width(Length::FillPortion(1))
+                  text(format!("{}", ds.metadata.contact)).size(12u16).width(Length::FillPortion(1))
                 )).push(row().padding(2).spacing(2).push(
                   text("Institution: ").size(12u16).width(Length::FillPortion(1))
                 ).push(
-                  text(format!("{}", ds.institution)).size(12u16).width(Length::FillPortion(1))
+                  text(format!("{}", ds.metadata.institution)).size(12u16).width(Length::FillPortion(1))
                 )).push(row().padding(2).spacing(2).push(
                   text("Instrument: ").size(12u16).width(Length::FillPortion(1))
                 ).push(
-                  text(format!("{}", ds.instrument)).size(12u16).width(Length::FillPortion(1))
+                  text(format!("{}", ds.metadata.instrument)).size(12u16).width(Length::FillPortion(1))
                 )).push(row().padding(2).spacing(2).push(
                   text("Date: ").size(12u16).width(Length::FillPortion(1))
                 ).push(
-                  text(format!("{:?}", ds.date.format("%d.%m.%Y - %H:%M:%S").to_string())).size(12u16).width(Length::FillPortion(1))
+                  text(format!("{:?}", ds.metadata.date.format("%d.%m.%Y - %H:%M:%S").to_string())).size(12u16).width(Length::FillPortion(1))
                 )
               )
               
@@ -109,7 +111,8 @@ pub fn view_datasets<'a>(
             .push(row().padding(2).spacing(5)
               .push(text("m/z").size(14u16).width(Length::FillPortion(1)))
               .push(text("int").size(14u16).width(Length::FillPortion(1)))), 
-          |col, (x, y)| {
+          |col, i| {
+            let MSPoint {mz: x, int: y, ..} = datasets[selected].points[*i];
             col.push(
               row().padding(2).spacing(5)
                 .push(text(format!("{:.3}", x)).size(12u16)
@@ -187,8 +190,26 @@ pub fn ribbon<'a>() -> Row<'a, Message> {
     .into()
 }
 
-fn get_icon(s: &str) -> Svg {
-  Svg::from_path(format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), s))
-}
-
+/*
+pub fn generate_form(
+  title:   String,
+  entries: Vec<(String, Element<Message>)>,
+  msg:     Message
+) -> Element<Message> {
+  
+  entries.iter().fold(
+    column().padding(20).spacing(20)
+      .push(text(title).size(20u16)),
+    |col, (s, e)| {
+      col.push(
+        row()
+          .push(text(s).width(Length::FillPortion(1)))
+          .push(container(*e).width(Length::FillPortion(1)))
+      )
+    }
+  ).push(
+    button(text("Submit")).on_press(msg)
+  ).into()
+  
+}*/
 

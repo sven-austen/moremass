@@ -1,8 +1,34 @@
 pub mod parser;
-use chrono::{DateTime, Utc, TimeZone};
+mod calcs;
+use chrono::{DateTime, Utc};
+
+#[derive(Clone, Default, Debug)]
+pub struct MSPoint {
+  pub mz:  f64,
+  pub int: f64,
+  pub snr: f64, // Signal/Noise Ratio; only neq 0 for points that are local maxima
+}
 
 #[derive(Clone)]
 pub struct Dataset {
+  pub metadata: Metadata,
+  
+  pub points:  Vec<MSPoint>,
+  pub peaks:   Vec<usize>,
+  pub maxima:  Vec<usize>,
+  pub mz_min:  f64,
+  pub mz_max:  f64,
+  pub int_min: f64,
+  pub int_max: f64,
+  
+  pub noise_level: f64,
+  pub noise_width: f64,
+  
+  pub visible: bool,
+}
+
+#[derive(Clone)]
+pub struct Metadata {
   pub title:       String,
   pub operator:    String,
   pub contact:     String,
@@ -10,61 +36,88 @@ pub struct Dataset {
   pub instrument:  String,
   pub date:        DateTime<Utc>,
   pub path:        String, 
-  
-  pub points: Vec<(f64, f64)>,
-  pub peaks:  Vec<(f64, f64)>,
-  pub y_min:  f64,
-  pub y_max:  f64,
-  pub x_min:  f64,
-  pub x_max:  f64,
-  
-  pub visible: bool,
-}
-
-impl Default for Dataset {
-  fn default() -> Self { Dataset {
-    title:       "".to_string(),
-    operator:    "".to_string(),
-    contact:     "".to_string(),
-    institution: "".to_string(),
-    instrument:  "".to_string(),
-    date:        Utc.ymd(1970, 1, 1).and_hms(0, 0, 0),
-    path:        "".to_string(),
-    
-    points: vec![],
-    peaks:  vec![],
-    y_min:  500.0,
-    y_max:  0.0,
-    x_min:  500.0,
-    x_max:  0.0,
-    
-    visible: true,
-  }}
 }
 
 impl Dataset {
-  pub fn find_peaks(&mut self) {
+  pub fn neww( md: Metadata, mut pts: Vec<MSPoint> ) -> Self {
+  
+    let mz_min = pts[0].mz;
+    let mz_max = pts[pts.len() - 1].mz;
+  
+    let mut buf: Vec<f64> =
+      pts.clone().iter()
+        .map(|MSPoint {int, ..}| {*int})
+        .collect();
+    calcs::sort_in_place(&mut buf);
     
-    // TODO this; right now i just spit out some junk data
+    let int_min     = buf[0];
+    let int_max     = buf[ buf.len() - 1 ];
+    let noise_level = buf[ buf.len() / 2 ];
+    
+    for i in 0..buf.len() {
+      buf[i] = f64::abs(buf[i] - noise_level);
+    }
+    calcs::sort_in_place(&mut buf);
+    let noise_width = buf[ buf.len() / 2 ] * 2.0;
+    
+    let maxima = calcs::get_maxima(&pts);
+    calcs::update_snrs(&mut pts, &maxima, noise_level, noise_width);
+  
+    Dataset {
+      metadata: md,
+      points: pts,
+      peaks:  vec![],
+      maxima: maxima,
       
-    self.peaks = vec![
-      (0.0, 0.0),
-      (610.0, 100.0),
-      (650.0, 300.0),
-      (680.0, 160.0),
-      (740.0, 400.0)
-    ];
+      mz_min:  mz_min,
+      mz_max:  mz_max,
+      int_min: int_min,
+      int_max: int_max,
+      
+      noise_level: noise_level,
+      noise_width: noise_width,
+      
+      visible: true,
+    }
+  
+  }
+
+  pub fn pushpeak(&mut self, i: usize) {
+    self.peaks.push(i); // TODO check for duplicates
+  }
+
+  pub fn find_peaks(
+    &mut self, 
+    ratio:   f64, 
+    abs_int: f64, 
+    rel_int: f64,
+    reset: bool
+  ) {
+    if reset {
+      self.peaks = vec![];
+    }
+    
+    let threshold = f64::max(self.int_max * rel_int, abs_int);
+    
+    for i in self.maxima.clone() {
+      if self.points[i].int > threshold && 
+         self.points[i].snr > ratio {
+      
+        self.pushpeak(i);
+      }
+    }
     
   }
+  
 }
 
 #[derive(Default)]
 pub struct Data {
   pub sets: Vec<Dataset>,
-  pub x_min_g: f64,
-  pub x_max_g: f64,
-  pub y_min_g: f64,
-  pub y_max_g: f64,
+  pub mz_min:  f64,
+  pub mz_max:  f64,
+  pub int_min: f64,
+  pub int_max: f64,
   pub curr_ds: usize,
 }
 
@@ -72,15 +125,15 @@ impl Data {
   pub fn push(&mut self, ds: Option<Dataset>) {
     if let Some(d) = ds {
       if self.sets.len() > 0 {
-        self.x_min_g = self.x_min_g.min(d.x_min);
-        self.x_max_g = self.x_max_g.max(d.x_max);
-        self.y_min_g = self.y_min_g.min(d.y_min);
-        self.y_max_g = self.y_max_g.max(d.y_max);
+        self.mz_min  = f64::min(self.mz_min,  d.mz_min);
+        self.mz_max  = f64::max(self.mz_max,  d.mz_max);
+        self.int_min = f64::min(self.int_min, d.int_min);
+        self.int_max = f64::max(self.int_max, d.int_max);
       } else {
-        self.x_min_g = d.x_min;
-        self.x_max_g = d.x_max;
-        self.y_min_g = d.y_min;
-        self.y_max_g = d.y_max;
+        self.mz_min  = d.mz_min;
+        self.mz_max  = d.mz_max;
+        self.int_min = d.int_min;
+        self.int_max = d.int_max;
       }
       self.sets.push(d);
       self.curr_ds = self.sets.len() - 1;

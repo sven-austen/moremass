@@ -2,20 +2,18 @@ mod backend;
 mod frontend;
 
 use crate::backend::{
-  Dataset,
   parser::parse_mzxml_badly
 };
 
-use crate::frontend::plot;
-//use crate::frontend::plot;
-use crate::frontend::elements::*;
-use crate::frontend::elements::header::*;
-
+use crate::frontend::{
+  plot,
+  elements::{*, header::*, popups::*},
+};
 use iced::{
   Settings, Length,
-  Alignment, alignment::Horizontal,
+  Alignment, 
   pure::{ 
-    row, text, Sandbox, Element, column, text_input,
+    row, Sandbox, Element, column, container
   },
 };
 
@@ -31,22 +29,17 @@ pub fn main() -> iced::Result {
 #[derive(Default)]
 struct MoreMass {
   data:         backend::Data,
-  controls:     Controls,
   
   plot: plot::State,
-  popup: Option<WhichPopup>,
-}
-
-#[derive(Default)]
-struct Controls {
-  file_path: String,
+  popup: WhichPopup,
 }
 
 // Message Types ----------------------
 #[derive(Debug, Clone)]
 pub enum Message {
   Popup( WhichPopup ),
-  ChangeFilePath( String ),
+  ClosePopup,
+  
   ToggleVisibility( usize ),
   SelectDataset( usize ),
   
@@ -54,16 +47,13 @@ pub enum Message {
   ProcessingOp( WhichProcessingOp ),
   
   ForPlot( plot::PlotMsg ),
-  AddPeak( (f64, f64) ),
-  LoadFile,
+  ForPopup( popups::ForPopup ),
+  
+  AddPeak( usize ),
+  FindPeaks( f64, f64, f64 ),
   LoadFromPath( String ),
   Clear,
   Noop
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum WhichPopup {
-  FindFile,
 }
 
 
@@ -82,23 +72,15 @@ impl Sandbox for MoreMass {
     match message {
     
       Message::Popup(which) => {
-        self.popup = Some(which);
+        self.popup = which;
       }
-      Message::ChangeFilePath(s) => {
-        self.controls.file_path = s;
-      }
-      Message::LoadFile => {
-        self.data.push(parse_mzxml_badly(&self.controls.file_path));
-        self.controls.file_path = "".to_string();
-        self.popup = None;
-        self.plot.rethink_bounds(&self.data);
-        self.plot.req_redraw();
+      Message::ClosePopup => {
+        self.popup = WhichPopup::NoPopup;
       }
       
       Message::LoadFromPath(s) => {
         self.data.push(parse_mzxml_badly(&s));
-        self.controls.file_path = "".to_string();
-        self.popup = None;
+        self.popup = WhichPopup::NoPopup;
         self.plot.rethink_bounds(&self.data);
         self.plot.req_redraw();
       }
@@ -122,10 +104,10 @@ impl Sandbox for MoreMass {
       
         match which {
           WhichFileOp::New => {
-            self.data.push(Some(Dataset::default()));
+//            self.data.push(Some(Dataset::default()));
           }
           WhichFileOp::Open => {
-            self.popup = Some(WhichPopup::FindFile);
+            self.popup = popups::new_find_file();
           }
           WhichFileOp::CloseAll => {
             self.data = crate::backend::Data::default();
@@ -140,8 +122,7 @@ impl Sandbox for MoreMass {
         match which {
           WhichProcessingOp::FindPeaks => {
             if self.data.curr_ds < self.data.sets.len() {
-              self.data.sets[self.data.curr_ds].find_peaks(); // TODO implement popup for entering parameters
-              self.plot.req_redraw();
+              self.popup = popups::new_find_peaks();
             }
           }
         }
@@ -152,11 +133,23 @@ impl Sandbox for MoreMass {
         self.plot.update(msg);
       }
       
-      Message::AddPeak(pk) => {
+      Message::ForPopup(msg) => {
+        self.popup.update(msg);
+      }
+      
+      Message::AddPeak(i) => {
         // assumes that curr_ds is valid bc that was checked for in Plot
-        self.data.sets[self.data.curr_ds].peaks.push(pk);
+        self.data.sets[self.data.curr_ds].pushpeak(i);
         self.plot.r_click = None;
         self.plot.req_redraw();
+      }
+      
+      Message::FindPeaks(ratio, abs_int, rel_int) => {
+        if self.data.sets.len() > self.data.curr_ds {
+          self.data.sets[self.data.curr_ds].find_peaks(ratio, abs_int, rel_int, true);
+          self.plot.req_redraw();
+        }
+        self.popup = WhichPopup::NoPopup;
       }
       
       Message::Clear => {
@@ -176,35 +169,8 @@ impl Sandbox for MoreMass {
     ).width(Length::FillPortion(5));
     
     
-    let right: Element<Message> = 
-      if let Some(which) = self.popup {
-        match which {
-        
-          WhichPopup::FindFile => {
-          
-            column().padding(20).spacing(20)
-              .align_items(Horizontal::Center.into())
-              .push(text("Enter File Path:"))
-              .push(
-                text_input(
-                  "File Path",
-                  &self.controls.file_path,
-                  Message::ChangeFilePath,
-                ).on_submit(Message::LoadFile)
-              )
-              .width(Length::FillPortion(4))
-              .into()
-              
-          }
-        }
-      } else {
-        column()
-          .width(Length::FillPortion(1))
-          .align_items(Alignment::Center)
-          .push(text("No popup"))
-          .into()
-      };
-
+    let right: Element<Message> = self.popup.view();
+    
       column().padding(20)
         .align_items(Alignment::Center)
         .push(header())
@@ -212,7 +178,7 @@ impl Sandbox for MoreMass {
         .push(
           row()
             .push( 
-              row().push(view_datasets(&self.data.sets, self.data.curr_ds))
+              container(view_datasets(&self.data.sets, self.data.curr_ds))
                 .width(Length::FillPortion(2))
             )
 //            .push(peaks)
