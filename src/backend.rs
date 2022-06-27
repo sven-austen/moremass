@@ -83,7 +83,20 @@ impl Dataset {
   }
 
   pub fn pushpeak(&mut self, i: usize) {
-    self.peaks.push(i); // TODO check for duplicates
+    if self.points.len() > i && !self.peaks.contains(&i) {
+      self.peaks.push(i);
+    }
+  }
+  
+  pub fn removepeaks(&mut self, lower: f64, upper: f64) {
+  
+    self.peaks = self.peaks.clone().into_iter().filter(
+      |&i| {
+        self.points[i].mz < lower ||
+        self.points[i].mz > upper
+      }
+    ).collect();
+
   }
 
   pub fn find_peaks(
@@ -91,9 +104,9 @@ impl Dataset {
     ratio:   f64, 
     abs_int: f64, 
     rel_int: f64,
-    reset: bool
+    overwrite: bool
   ) {
-    if reset {
+    if overwrite {
       self.peaks = vec![];
     }
     

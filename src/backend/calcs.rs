@@ -31,8 +31,6 @@ pub fn update_snrs(
   noise_level: f64,
   noise_width: f64
 ) {
-  print!("lvl: {:?}, width: {:?}", noise_level, noise_width);
-
   if noise_width > 0.0 {
   
     for i in maxima {

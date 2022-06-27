@@ -6,15 +6,16 @@ use crate::backend::{
 };
 
 use crate::frontend::{
-  plot,
-  elements::{*, header::*, popups::*},
+  plot, elements::{
+    popups::{ self, WhichPopup },
+    header::{ WhichFileOp, WhichProcessingOp },
+  }
 };
 use iced::{
-  Settings, Length,
-  Alignment, 
-  pure::{ 
-    row, Sandbox, Element, column, container
-  },
+  Settings,
+  pure::{
+    Element, Sandbox, 
+  }
 };
 
 
@@ -27,10 +28,10 @@ pub fn main() -> iced::Result {
 
 // Application State ------------------
 #[derive(Default)]
-struct MoreMass {
-  data:         backend::Data,
+pub struct MoreMass {
+  data:  backend::Data,
   
-  plot: plot::State,
+  plot:  plot::State,
   popup: WhichPopup,
 }
 
@@ -40,19 +41,20 @@ pub enum Message {
   Popup( WhichPopup ),
   ClosePopup,
   
-  ToggleVisibility( usize ),
-  SelectDataset( usize ),
-  
   FileOp( WhichFileOp ),
   ProcessingOp( WhichProcessingOp ),
   
-  ForPlot( plot::PlotMsg ),
+  ForPlot ( plot::PlotMsg ),
   ForPopup( popups::ForPopup ),
   
+  ToggleVisibility( usize ),
+  SelectDataset( usize ),
   AddPeak( usize ),
+  RemovePeaks( f64, f64 ),
   FindPeaks( f64, f64, f64 ),
   LoadFromPath( String ),
   Clear,
+  
   Noop
 }
 
@@ -144,6 +146,12 @@ impl Sandbox for MoreMass {
         self.plot.req_redraw();
       }
       
+      Message::RemovePeaks(lower, upper) => {
+        self.data.sets[self.data.curr_ds].removepeaks(lower, upper);
+        self.plot.r_click = None;
+        self.plot.req_redraw();
+      }
+      
       Message::FindPeaks(ratio, abs_int, rel_int) => {
         if self.data.sets.len() > self.data.curr_ds {
           self.data.sets[self.data.curr_ds].find_peaks(ratio, abs_int, rel_int, true);
@@ -163,29 +171,7 @@ impl Sandbox for MoreMass {
   
   fn view(&self) -> Element<Message> {
 
-    
-    let center = column().push(
-      self.plot.view(&self.data)
-    ).width(Length::FillPortion(5));
-    
-    
-    let right: Element<Message> = self.popup.view();
-    
-      column().padding(20)
-        .align_items(Alignment::Center)
-        .push(header())
-        .push(ribbon())
-        .push(
-          row()
-            .push( 
-              container(view_datasets(&self.data.sets, self.data.curr_ds))
-                .width(Length::FillPortion(2))
-            )
-//            .push(peaks)
-            .push(center)
-            .push(right)
-        )
-        .into()
+    frontend::view(self)
 
   }
 }

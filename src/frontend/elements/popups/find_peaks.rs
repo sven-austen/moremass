@@ -43,7 +43,9 @@ impl State {
                 Message::ForPopup(
                   ForPopup::ForFindPeaks(
                     FindPeaksMsg::SNRatio(s))) }
-            ).width(Length::FillPortion(1))
+            )
+            .on_submit(self.parse_inputs())
+            .width(Length::FillPortion(1))
           )
       ).push(
         row()
@@ -56,7 +58,9 @@ impl State {
                 Message::ForPopup(
                   ForPopup::ForFindPeaks(
                     FindPeaksMsg::AbsIntensity(s))) },
-            ).width(Length::FillPortion(1))
+            )
+            .on_submit(self.parse_inputs())
+            .width(Length::FillPortion(1))
           )
       ).push(
         row()
@@ -69,7 +73,9 @@ impl State {
                 Message::ForPopup(
                   ForPopup::ForFindPeaks(
                     FindPeaksMsg::RelIntensity(s)))}
-            ).width(Length::FillPortion(1))
+            )
+            .on_submit(self.parse_inputs())
+            .width(Length::FillPortion(1))
           )
       ).push(
         button(text("Go")).on_press(self.parse_inputs())
@@ -93,18 +99,23 @@ impl State {
   
   pub fn parse_inputs(&self) -> Message {
     
-    let res_ratio = f64::from_str(&self.sn_ratio);
-    let res_abs   = f64::from_str(&self.abs_intensity);
-    let res_rel   = f64::from_str(&self.rel_intensity);
+    let ratio   = if let Ok(v) = f64::from_str(&self.sn_ratio) {
+      v
+    } else {
+      0.0
+    };
+    let abs_int = if let Ok(v) = f64::from_str(&self.abs_intensity) {
+      v
+    } else {
+      0.0
+    };
+    let rel_int = if let Ok(v) = f64::from_str(&self.rel_intensity) {
+      v
+    } else {
+      0.0
+    };
     
-    if let Ok(ratio) = res_ratio {
-      if let Ok(abs_int) = res_abs {
-        if let Ok(rel_int) = res_rel {
-          return Message::FindPeaks(ratio, abs_int, rel_int);
-        }
-      }
-    }
-    Message::Noop
+    Message::FindPeaks(ratio, abs_int, rel_int)
     
   }
 

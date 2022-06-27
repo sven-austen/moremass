@@ -7,8 +7,11 @@ pub mod popups;
 
 use crate::{
   Message,
-  backend::{ Dataset, MSPoint },
-  frontend::get_icon,
+  backend::{ Dataset },
+  frontend::{
+    get_icon,
+    plot::PlotMsg,
+  },
 };
 
 use iced::{
@@ -112,17 +115,19 @@ pub fn view_datasets<'a>(
               .push(text("m/z").size(14u16).width(Length::FillPortion(1)))
               .push(text("int").size(14u16).width(Length::FillPortion(1)))), 
           |col, i| {
-            let MSPoint {mz: x, int: y, ..} = datasets[selected].points[*i];
+            let pt = &datasets[selected].points[*i];
             col.push(
-              row().padding(2).spacing(5)
-                .push(text(format!("{:.3}", x)).size(12u16)
-                  .width(Length::FillPortion(1))
-                  .horizontal_alignment(alignment::Horizontal::Right)
-                )
-                .push(text(format!("{:.0}", y)).size(12u16)
-                  .width(Length::FillPortion(1))
-                  .horizontal_alignment(alignment::Horizontal::Right)
-                )
+              button(
+                row().padding(2).spacing(5)
+                  .push(text(format!("{:.2}", pt.mz)).size(12u16)
+                    .width(Length::FillPortion(1))
+                    .horizontal_alignment(alignment::Horizontal::Right)
+                  )
+                  .push(text(format!("{:.0}", pt.int)).size(12u16)
+                    .width(Length::FillPortion(1))
+                    .horizontal_alignment(alignment::Horizontal::Right)
+                  )
+              ).on_press(Message::ForPlot(PlotMsg::SnapTo(pt.mz as f32)))
             )
         })
     } else {

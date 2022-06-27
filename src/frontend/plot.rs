@@ -63,6 +63,7 @@ pub enum PlotMsg {
   RClick(Point),
   MouseUp(mouse::Button),
   MoveTo(f32, f32),
+  SnapTo(f32),
   Scaled(f32, (f32, f32)),
   ModifiersChanged(keyboard::Modifiers),
 }
@@ -136,6 +137,11 @@ impl State {
         self.req_redraw();
       }
       
+      PlotMsg::SnapTo( mz ) => {
+        self.x0 = self.sx * (mz - 1f32);
+        self.req_redraw();
+      }
+      
       PlotMsg::Scaled(delta, (dx, _dy)) => {
         
         if self.modifiers.shift() {
@@ -202,17 +208,28 @@ impl<'a> canvas::Program<Message> for Plot<'a> {
     if let Event::Mouse(mouse::Event::ButtonReleased(btn)) = event {
       match btn {
         mouse::Button::Right => {
-        
-          if let Some(peak) = self.max_pt_in_highlight(&bounds) {
+          
+          if self.state.modifiers.shift() {
+            
+            let (lower, upper) = self.selection_to_values(&bounds);
             return (
-              event::Status::Captured, 
-              Some(Message::AddPeak(peak))
-            );
+              event::Status::Captured,
+              Some(Message::RemovePeaks(lower, upper))
+            )
+            
           } else {
-            return (
-              event::Status::Ignored, 
-              Some(Message::ForPlot(PlotMsg::MouseUp(mouse::Button::Right)))
-            );
+            
+            if let Some(peak) = self.max_pt_in_highlight(&bounds) {
+              return (
+                event::Status::Captured, 
+                Some(Message::AddPeak(peak))
+              );
+            } else {
+              return (
+                event::Status::Ignored, 
+                Some(Message::ForPlot(PlotMsg::MouseUp(mouse::Button::Right)))
+              );
+            }
           }
         
         }
@@ -425,13 +442,8 @@ impl Plot<'_> {
     
     if self.data.sets.len() > self.data.curr_ds {
       
-      let (lower_c, upper_c) = self.state.selection;
-      let (mut lower, mut upper  ) = 
-        ( self.to_values(Point {x: lower_c, y: 0.0 }, &bounds).mz
-        , self.to_values(Point {x: upper_c, y: 0.0 }, &bounds).mz );
-      if lower > upper {
-        (lower, upper) = (upper, lower);
-      }
+      let (lower, upper) = self.selection_to_values(bounds);
+      
       let valid_pts: Vec<&usize> = 
         self.data.sets[self.data.curr_ds].maxima.iter()
           .filter( |i| {
@@ -460,6 +472,19 @@ impl Plot<'_> {
       None
     }
     
+  }
+  
+  fn selection_to_values(&self, bounds: &Rectangle) -> (f64, f64) {
+    let (lower_c, upper_c) = self.state.selection;
+    let (lower, upper) = 
+      ( self.to_values(Point {x: lower_c, y: 0.0 }, &bounds).mz
+      , self.to_values(Point {x: upper_c, y: 0.0 }, &bounds).mz );
+      
+    if lower < upper {
+      (lower, upper)
+    } else {
+      (upper, lower)
+    }
   }
 
   fn to_values(&self, Point {x, y}: Point, bounds: &Rectangle) -> MSPoint {
